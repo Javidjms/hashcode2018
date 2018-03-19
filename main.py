@@ -1,11 +1,7 @@
 import sys
+import matplotlib.pyplot as plt
 
-
-def compute_distance(car, ride):
-    distance1 = abs(ride.rb - car.r) + abs(ride.cb - car.c)
-    distance2 = abs(ride.rb - ride.re) + abs(ride.cb - ride.ce)
-    return distance1 + distance2
-
+# TODO ADD Comments or change variable name
 
 class Car(object):
 
@@ -13,23 +9,15 @@ class Car(object):
         self.id = id
         self.r = r
         self.c = c
-        self.is_active = False
-        self.has_prepared_ride = False
-        self.target = (-1, -1)
         self.rides = []
+        self.available_turn = 0
 
-    def check_target_reached(self):
-        return self.target == (self.r, self.c)
+    def get_distance_to_ride(self, ride):
+        return abs(self.r - ride.rb) + abs(self.c - ride.cb)
 
-    def move(self):
-        if self.r != self.target[0]:
-            direction = 1 if self.target[0] - self.r > 0 else -1
-            self.r += direction
-        elif self.c != self.target[1]:
-            direction = 1 if self.target[1] - self.c > 0 else -1
-            self.c += direction
-        else:
-            pass
+    def get_waiting_time(self, ride):
+        distance = self.get_distance_to_ride(ride)
+        return max(0, ride.tb - (distance + self.available_turn))
 
     def __repr__(self):
         return "Car {} - ({}, {})".format(self.id, self.r, self.c)
@@ -37,7 +25,7 @@ class Car(object):
 
 class Ride(object):
 
-    def __init__(self, id, rb, cb, re, ce, tb, te):
+    def __init__(self, id, rb, cb, re, ce, tb, te, bonus):
         self.id = id
         self.rb = rb
         self.cb = cb
@@ -45,7 +33,26 @@ class Ride(object):
         self.ce = ce
         self.tb = tb
         self.te = te
+        self.bonus = bonus
         self.car = None
+        self.start_turn = None
+        self.end_turn = None
+
+    def get_bonus(self):
+        if self.start_turn is None or self.start_turn > self.tb:
+            return 0
+        return self.bonus
+
+    def get_distance(self):
+        return abs(self.re - self.rb) + abs(self.ce - self.cb)
+
+    def get_distance_to_next_ride(self, ride):
+        return abs(self.re - ride.rb) + abs(self.ce - ride.cb)
+
+    def get_score(self):
+        if self.end_turn is None or self.end_turn >= self.te:
+            return 0
+        return self.get_distance() + self.get_bonus()
 
     def __repr__(self):
         return "Ride {} - ({}, {}) => ({}, {}) => ({}, {})".format(
@@ -64,9 +71,64 @@ class RMap(object):
         self.turns = turns
 
         self.cars = []
-        for i in range(1, self.nb_cars + 1):
+        for i in range(self.nb_cars):
             self.cars.append(Car(i, 0, 0))
         self.rides = rides
+
+
+def init_nearest_ride(rides):
+    for ride in rides:
+        nearest_rides = sorted(rides, key=lambda r: ride.get_distance_to_next_ride(r))
+        ride.next_ride = ride.get_distance_to_next_ride(nearest_rides[0])
+
+
+def find_best_ride(turn, car, rides, max_turn):
+    filter_func = lambda r: (
+        r.car is None and
+        turn < min(r.te, max_turn) and
+        turn + car.get_distance_to_ride(r) + car.get_waiting_time(r) + r.get_distance() < min(r.te, max_turn)
+    )
+    sorted_func = lambda r: (
+        # int((r.te - (turn + car.get_distance_to_ride(r) + car.get_waiting_time(r) + r.get_distance())) > 10),
+        car.get_distance_to_ride(r) + car.get_waiting_time(r) + r.next_ride,
+        -(r.get_distance() + (r.bonus if turn <= r.tb else 0)),
+    )
+
+    available_rides = filter(filter_func, rides)
+    available_rides = sorted(available_rides, key=sorted_func)
+    return available_rides[0] if len(available_rides) > 0 else None
+
+
+def assign(turn, car, ride):
+    complete_distance = car.get_distance_to_ride(ride) + ride.get_distance()
+    ride.car = car
+    ride.start_turn = turn + car.get_distance_to_ride(ride)
+    ride.end_turn = turn + car.get_waiting_time(ride) + complete_distance
+
+    car.r, car.c = ride.re, ride.ce
+    car.available_turn = turn + car.get_waiting_time(ride) + complete_distance
+    car.rides.append(ride)
+
+
+def run(rmap):
+    current_turn = 0
+    init_nearest_ride(rmap.rides)
+    while True:
+        print("TURN", current_turn, rmap.turns)
+        available_cars = filter(lambda c: current_turn >= c.available_turn, rmap.cars)
+
+        for car in available_cars:
+            ride = find_best_ride(current_turn, car, rmap.rides, rmap.turns)
+            if ride is not None:
+                assign(current_turn, car, ride)
+
+        if current_turn == rmap.turns:
+            break
+        current_turn += 1
+    # To BE REMOVED
+    # unfinished_rides = list(filter(lambda r: r.car is None or current_turn > r.te, rmap.rides))
+    # print(unfinished_rides)
+    # print("UNFINISHED RIDES : ", len(unfinished_rides))
 
 
 def read_file(filename):
@@ -75,65 +137,35 @@ def read_file(filename):
         max_rows, max_cols, nb_cars, nb_rides, bonus, steps = first_line
 
         rides = []
-        for i in range(0, nb_rides):
+        for i in range(nb_rides):
             rb, cb, re, ce, tb, te = [int(num) for num in f.readline().split()]
-            rides.append(Ride(i, rb, cb, re, ce, tb, te))
+            rides.append(Ride(i, rb, cb, re, ce, tb, te, bonus))
         rmap = RMap(max_rows, max_cols, nb_cars, nb_rides, bonus, steps, rides)
     return rmap
 
 
-def find_best_ride(car, rides):
-    # func = lambda r: compute_distance(car, r)
-    rides.sort(key=lambda r: (r.tb, compute_distance(car, r)))
-    return rides[0] if len(rides) else None
-
-
-def run(rmap):
-    current_turn = 0
-    while True:
-        print(current_turn, rmap.turns)
-        available_rides = list(filter(lambda c: not c.car, rmap.rides))
-        available_cars = list(filter(lambda c: not c.is_active, rmap.cars))
-
-        # Assign ride to free cars
-        for car in available_cars:
-            ride = find_best_ride(car, available_rides)
-            # ride = available_rides[0] if len(available_rides) else None
-            if ride:
-                ride.car = car
-                car.rides.append(ride)
-                car.target = (ride.rb, ride.cb)
-                car.is_active = True
-                available_rides.remove(ride)
-
-        active_cars = list(filter(lambda c: c.is_active, rmap.cars))
-
-        for car in active_cars:
-            current_ride = car.rides[-1]
-            if car.is_active and not car.has_prepared_ride and car.check_target_reached():
-                car.has_prepared_ride = True
-                car.target = (current_ride.re, current_ride.ce)
-
-            if (car.is_active and not car.has_prepared_ride) or \
-               (car.is_active and car.has_prepared_ride and
-               current_turn >= current_ride.tb):
-                car.move()
-
-            if car.is_active and car.has_prepared_ride and car.check_target_reached():
-                car.has_prepared_ride = False
-                car.is_active = False
-
-        if current_turn == rmap.turns:
-            break
-        current_turn += 1
-
-
 def write_file(rmap, filename):
+    score = 0
+    best_score_possible = 0
     with open(filename, 'w') as f:
+        # TO BE REMOVED
+        for ride in rmap.rides:
+            best_score_possible += ride.get_distance() + ride.bonus
         for car in rmap.cars:
-            f.write(' '.join(
-                [str(car.id)] + [str(ride.id) for ride in car.rides]) + '\n'
-            )
+            f.write('{} '.format(len(car.rides)))
+            for ride in car.rides:
+                score += ride.get_score()
+                f.write('{} '.format(ride.id))
+            f.write('\n')
+    print('SCORE : ', score)
+    print('BEST SCORE POSSIBLE: ', best_score_possible)
+
+
+def plot_rides(rides):
+    for ride in rides:
+        plt.plot([ride.rb * 5, ride.re * 5], [ride.cb * 5, ride.cb * 5], 'k-')
+        plt.plot([ride.re * 5, ride.re * 5], [ride.cb * 5, ride.ce * 2], 'k-')
+    plt.show()
 
 
 def main():
@@ -142,9 +174,11 @@ def main():
 
     print('Running on file: %s' % sys.argv[1])
     rmap = read_file(sys.argv[1])
-    # print(rmap.rides)
 
-    run(rmap)
+    try:
+        run(rmap)
+    except KeyboardInterrupt:
+        pass
 
     write_file(rmap, sys.argv[2])
 
