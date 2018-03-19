@@ -1,14 +1,13 @@
 import sys
 import matplotlib.pyplot as plt
 
-# TODO ADD Comments or change variable name
 
 class Car(object):
 
     def __init__(self, id, r, c):
         self.id = id
-        self.r = r
-        self.c = c
+        self.r = r  # Row
+        self.c = c  # Column
         self.rides = []
         self.available_turn = 0
 
@@ -27,12 +26,12 @@ class Ride(object):
 
     def __init__(self, id, rb, cb, re, ce, tb, te, bonus):
         self.id = id
-        self.rb = rb
-        self.cb = cb
-        self.re = re
-        self.ce = ce
-        self.tb = tb
-        self.te = te
+        self.rb = rb  # Row begin
+        self.cb = cb  # Column begin
+        self.re = re  # Row end
+        self.ce = ce  # Column end
+        self.tb = tb  # Earliest turn
+        self.te = te  # Finished turn
         self.bonus = bonus
         self.car = None
         self.start_turn = None
@@ -63,12 +62,12 @@ class Ride(object):
 class RMap(object):
 
     def __init__(self, rows, cols, nb_cars, nb_rides, bonus, turns, rides):
-        self.rows = rows
-        self.cols = cols
-        self.nb_cars = nb_cars
-        self.nb_rides = nb_rides
+        self.rows = rows  # Max rows
+        self.cols = cols  # Max cols
+        self.nb_cars = nb_cars  # All cars
+        self.nb_rides = nb_rides  # All rides
         self.bonus = bonus
-        self.turns = turns
+        self.turns = turns  # Max turns
 
         self.cars = []
         for i in range(self.nb_cars):
@@ -101,6 +100,7 @@ def find_best_ride(turn, car, rides, max_turn):
 
 def assign(turn, car, ride):
     complete_distance = car.get_distance_to_ride(ride) + ride.get_distance()
+
     ride.car = car
     ride.start_turn = turn + car.get_distance_to_ride(ride)
     ride.end_turn = turn + car.get_waiting_time(ride) + complete_distance
@@ -125,10 +125,6 @@ def run(rmap):
         if current_turn == rmap.turns:
             break
         current_turn += 1
-    # To BE REMOVED
-    # unfinished_rides = list(filter(lambda r: r.car is None or current_turn > r.te, rmap.rides))
-    # print(unfinished_rides)
-    # print("UNFINISHED RIDES : ", len(unfinished_rides))
 
 
 def read_file(filename):
@@ -146,11 +142,7 @@ def read_file(filename):
 
 def write_file(rmap, filename):
     score = 0
-    best_score_possible = 0
     with open(filename, 'w') as f:
-        # TO BE REMOVED
-        for ride in rmap.rides:
-            best_score_possible += ride.get_distance() + ride.bonus
         for car in rmap.cars:
             f.write('{} '.format(len(car.rides)))
             for ride in car.rides:
@@ -158,7 +150,6 @@ def write_file(rmap, filename):
                 f.write('{} '.format(ride.id))
             f.write('\n')
     print('SCORE : ', score)
-    print('BEST SCORE POSSIBLE: ', best_score_possible)
 
 
 def plot_rides(rides):
